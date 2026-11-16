@@ -90,6 +90,11 @@ linters:
           - gosec
         # Runs aws, codex, msiexec, icacls, powershell and whoami, found on PATH or at fixed install paths, with fixed arguments plus validated values.
         text: 'G204: Subprocess launched with (variable|a potential tainted input or cmd arguments)'
+      - path: '^cmd/ccwb-codex-setup/elevated_windows\.go$'
+        linters:
+          - gosec
+        # Calls advapi32's ConvertStringSecurityDescriptorToSecurityDescriptorW through a LazyProc, which needs unsafe.Pointer arguments; the standard library has no wrapper and x/sys/windows is not allowed.
+        text: 'G103: Use of unsafe calls should be audited'
       - path: '^policy/policy_test\.go$'
         linters:
           - gosec

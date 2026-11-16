@@ -41,7 +41,7 @@ Additional facts verified on Windows 11 on 2026-11-09:
 
 ## Go conventions
 
-- Standard library only. Adding a third-party module needs a strong reason.
+- Standard library first. The one standing exception is `golang.org/x/sys/windows` (the Go team's module), allowed in the Windows-only files of `cmd/ccwb-codex-setup` for Windows API calls, so we don't hand-write `syscall` and `unsafe` code that Go already wraps. Any other third-party module needs a strong reason.
 - No package folders that exist purely for organization. `policy` owns validation and rendering; `internal/plist` is internal because it's an implementation detail of the `.mobileconfig` output.
 - `config` is a package only because `//go:embed` cannot reach outside its directory. Only `cmd/ccwb-codex-setup` imports it.
 - Exported names read naturally with their package qualifier, no stutter (`policy.Config`, not `policy.PolicyConfig`).

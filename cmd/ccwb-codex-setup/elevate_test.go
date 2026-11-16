@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInstallSteps(t *testing.T) {
@@ -270,5 +272,37 @@ func TestChildFailureMessage(t *testing.T) {
 
 	if got := childFailureMessage(0); got != "" {
 		t.Errorf("successful child message = %q", got)
+	}
+}
+
+func TestReportProgress(t *testing.T) {
+	var out bytes.Buffer
+
+	stop := reportProgress(&out, 5*time.Millisecond, "still working")
+
+	time.Sleep(200 * time.Millisecond)
+	stop()
+
+	// stop returns only after the printer exits, so the buffer is safe to read
+	// and nothing is written afterwards.
+	got := out.String()
+	if lines := strings.Count(got, "still working"); lines < 2 {
+		t.Errorf("printed %d notices, want at least 2: %q", lines, got)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	if out.String() != got {
+		t.Error("printed after stop returned")
+	}
+}
+
+func TestReportProgressStopBeforeFirstNotice(t *testing.T) {
+	var out bytes.Buffer
+
+	reportProgress(&out, time.Hour, "never")()
+
+	if out.Len() != 0 {
+		t.Errorf("printed %q before the first interval", out.String())
 	}
 }

@@ -10,11 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ascending-llc/claude-3p-config/policy"
 )
 
 const (
+	// progressInterval is how often the setup window says it is still working
+	// while the hidden administrator step runs.
+	progressInterval = 30 * time.Second
+
 	awsV1Message  = `AWS CLI version 1 is installed. Codex needs version 2, which version 1 can't sit beside. Remove "AWS Command Line Interface" in Settings → Apps, then run this program again.`
 	reopenMessage = `Quit the ChatGPT app from the system tray (right-click → Quit), then open it again. If it asks you to sign in, use your ChatGPT, Google or other account; don't choose Amazon Bedrock.`
 )
@@ -46,7 +51,7 @@ func finishSteps(in *bufio.Scanner, stdout, stderr io.Writer, s policy.CodexSetu
 	code := 0
 
 	if requested != (installSteps{}) {
-		code = elevateAndCheck(requested, s, stderr)
+		code = elevateAndCheck(requested, s, stdout, stderr)
 
 		aws, major, err = findAWSCLI()
 		if err != nil {
@@ -178,8 +183,8 @@ func warnParentOwner(dir string, stderr io.Writer) {
 	}
 }
 
-func elevateAndCheck(requested installSteps, s policy.CodexSetup, stderr io.Writer) int {
-	childCode, err := startElevated(requested)
+func elevateAndCheck(requested installSteps, s policy.CodexSetup, stdout, stderr io.Writer) int {
+	childCode, err := startElevated(requested, stdout)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 	} else if childCode != 0 {
@@ -207,13 +212,30 @@ func elevateAndCheck(requested installSteps, s policy.CodexSetup, stderr io.Writ
 	return 0
 }
 
-func startElevated(steps installSteps) (int, error) {
+func startElevated(steps installSteps, stdout io.Writer) (int, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return 0, fmt.Errorf("finding this setup program: %s", err.Error())
 	}
 
-	err = powershellCommand(elevationScript(exe, steps)).Run()
+	notice := "Still working on the administrator step. Please don't close this window."
+	if steps.awsCLI {
+		notice = "Still installing the AWS CLI, which can take a few minutes. Please don't close this window."
+
+		_, _ = fmt.Fprintln(stdout, "Approve the Windows administrator prompt. Installing the AWS CLI can take a few minutes; keep this window open until it finishes.")
+	}
+
+	cmd := powershellCommand(elevationScript(exe, steps))
+
+	if err = cmd.Start(); err != nil {
+		return 0, fmt.Errorf("starting the administrator step: %s", err.Error())
+	}
+
+	stop := reportProgress(stdout, progressInterval, notice)
+	err = cmd.Wait()
+
+	stop()
+
 	if err == nil {
 		return 0, nil
 	}

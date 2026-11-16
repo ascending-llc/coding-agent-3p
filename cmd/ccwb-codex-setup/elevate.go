@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type (
@@ -93,6 +95,35 @@ func elevationScript(exe string, steps installSteps) string {
 	return "try { $p = Start-Process -FilePath " + powershellQuote(exe) +
 		" -ArgumentList '-elevated'," + powershellQuote(steps.argument()) +
 		" -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop } catch { exit 1223 }; exit $p.ExitCode"
+}
+
+// reportProgress prints message to out every interval until the returned stop
+// function is called. stop waits for the printer to finish, so the caller can
+// write to out afterwards without interleaving.
+func reportProgress(out io.Writer, interval time.Duration, message string) (stop func()) {
+	done := make(chan struct{})
+	finished := make(chan struct{})
+
+	go func() {
+		defer close(finished)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				_, _ = fmt.Fprintln(out, message)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		<-finished
+	}
 }
 
 func parseAWSVersion(output []byte) (int, error) {

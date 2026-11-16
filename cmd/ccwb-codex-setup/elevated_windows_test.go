@@ -254,6 +254,12 @@ func TestLockAdminOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Some new folders start with explicit grants, such as one for the
+	// creating account on the GitHub Windows runner.
+	if err := runICACLS(dir, "/grant", "*"+usersSID+":(OI)(CI)F"); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := lockAdminOnly(dir); err != nil {
 		t.Fatal(err)
 	}

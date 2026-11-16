@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -236,6 +237,12 @@ func lockAdminOnly(dir string) error {
 		return err
 	}
 
+	// A new folder can start with explicit grants, such as one for the
+	// creating account, which /inheritance:r leaves in place.
+	if err := removeOtherRules(dir, systemSID, administratorSID); err != nil {
+		return err
+	}
+
 	if err := runICACLS(dir, "/inheritance:r"); err != nil {
 		return err
 	}
@@ -427,16 +434,38 @@ func lockRequirementsFolder(dir string) error {
 		return err
 	}
 
+	if err := removeOtherRules(dir, systemSID, administratorSID, usersSID); err != nil {
+		return err
+	}
+
+	if err := runICACLS(dir, "/inheritance:r"); err != nil {
+		return err
+	}
+
 	acl, err := readACL(dir)
 	if err != nil {
 		return err
 	}
 
-	// /grant:r replaces only each named SID's grants. Remove other explicit
-	// grants and deny rules, so the lock also repairs an existing custom ACL.
+	if !acl.directoryLocked() {
+		return fmt.Errorf("the Codex folder permissions do not match the required lock: %+v", acl)
+	}
+
+	return nil
+}
+
+// removeOtherRules removes every explicit rule on dir except allow rules for
+// the kept SIDs. /grant:r replaces only each named SID's grants, so this also
+// repairs an existing custom ACL. Inherited rules are left to /inheritance:r.
+func removeOtherRules(dir string, keep ...string) error {
+	acl, err := readACL(dir)
+	if err != nil {
+		return err
+	}
+
 	removed := make(map[string]bool)
 	for _, rule := range acl.rules {
-		if rule.inherited || (rule.allow && (rule.sid == systemSID || rule.sid == administratorSID || rule.sid == usersSID)) {
+		if rule.inherited || (rule.allow && slices.Contains(keep, rule.sid)) {
 			continue
 		}
 
@@ -450,24 +479,11 @@ func lockRequirementsFolder(dir string) error {
 			continue
 		}
 
-		if commandErr := runICACLS(dir, option, "*"+rule.sid); commandErr != nil {
-			return commandErr
+		if err := runICACLS(dir, option, "*"+rule.sid); err != nil {
+			return err
 		}
 
 		removed[key] = true
-	}
-
-	if commandErr := runICACLS(dir, "/inheritance:r"); commandErr != nil {
-		return commandErr
-	}
-
-	acl, err = readACL(dir)
-	if err != nil {
-		return err
-	}
-
-	if !acl.directoryLocked() {
-		return fmt.Errorf("the Codex folder permissions do not match the required lock: %+v", acl)
 	}
 
 	return nil

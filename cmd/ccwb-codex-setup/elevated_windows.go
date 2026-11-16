@@ -11,18 +11,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
-	"unsafe"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/ascending-llc/claude-3p-config/policy"
 )
 
 type heldFolder struct {
 	path   string
-	handle syscall.Handle
+	handle windows.Handle
 }
 
 const (
@@ -30,24 +32,13 @@ const (
 	awsCLIDownloadTimeout = 5 * time.Minute
 	msiRestartRequired    = 3010
 
-	// fileListDirectory makes a held folder handle count for sharing checks;
-	// a handle with only fileReadAttributes would not block a rename.
-	fileListDirectory  = 0x1
-	fileReadAttributes = 0x80
-
-	// windowsDirectoryBytes holds a MAX_PATH UTF-16 registry value.
-	windowsDirectoryBytes uint32 = 2 * syscall.MAX_PATH
-
 	// adminOnlySDDL is owned by Administrators and grants full control only to
 	// SYSTEM and Administrators, without inheriting from the parent folder.
 	adminOnlySDDL = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-	sddlRevision1 = 1
 
 	// downloadDirAttempts bounds retries when a random name is already taken.
 	downloadDirAttempts = 10
 )
-
-var procConvertSDDL = syscall.NewLazyDLL("advapi32.dll").NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 
 func runElevated(args []string, cfg []byte) int {
 	if len(args) != 2 || args[0] != "-elevated" {
@@ -190,15 +181,13 @@ func awsCLIDownloadDir() (string, error) {
 // the Windows Temp folder, CREATOR OWNER gives the signed-in user full control
 // of a folder an elevated process creates.
 func createAdminOnlyDir(parent, prefix string) (string, error) {
-	sd, err := adminOnlySecurityDescriptor()
+	sd, err := windows.SecurityDescriptorFromString(adminOnlySDDL)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("building the download folder permissions: %s", err.Error())
 	}
 
-	defer func() { _, _ = syscall.LocalFree(syscall.Handle(sd)) }()
-
-	attributes := syscall.SecurityAttributes{SecurityDescriptor: sd}
-	attributes.Length = uint32(unsafe.Sizeof(attributes))
+	attributes := windows.SecurityAttributes{SecurityDescriptor: sd}
+	attributes.Length = uint32(reflect.TypeFor[windows.SecurityAttributes]().Size())
 
 	for range downloadDirAttempts {
 		suffix := make([]byte, 8)
@@ -208,13 +197,13 @@ func createAdminOnlyDir(parent, prefix string) (string, error) {
 
 		dir := filepath.Join(parent, prefix+hex.EncodeToString(suffix))
 
-		path, pathErr := syscall.UTF16PtrFromString(dir)
+		path, pathErr := windows.UTF16PtrFromString(dir)
 		if pathErr != nil {
 			return "", pathErr
 		}
 
-		err = syscall.CreateDirectory(path, &attributes)
-		if errors.Is(err, syscall.ERROR_ALREADY_EXISTS) {
+		err = windows.CreateDirectory(path, &attributes)
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 			continue
 		}
 
@@ -234,61 +223,25 @@ func createAdminOnlyDir(parent, prefix string) (string, error) {
 	return "", fmt.Errorf("creating the AWS CLI download folder: %s", err.Error())
 }
 
-func adminOnlySecurityDescriptor() (uintptr, error) {
-	sddl, err := syscall.UTF16PtrFromString(adminOnlySDDL)
-	if err != nil {
-		return 0, err
-	}
-
-	var sd uintptr
-
-	ok, _, callErr := procConvertSDDL.Call(uintptr(unsafe.Pointer(sddl)), sddlRevision1, uintptr(unsafe.Pointer(&sd)), 0)
-	if ok == 0 {
-		return 0, fmt.Errorf("building the download folder permissions: %s", callErr.Error())
-	}
-
-	return sd, nil
-}
-
 // windowsDirectory reads the Windows folder from HKLM, which only
 // administrators can change. A user's environment can override %SystemRoot%.
 func windowsDirectory() (string, error) {
-	subkey, err := syscall.UTF16PtrFromString(`SOFTWARE\Microsoft\Windows NT\CurrentVersion`)
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
-		return "", err
-	}
-
-	var key syscall.Handle
-	if err = syscall.RegOpenKeyEx(syscall.HKEY_LOCAL_MACHINE, subkey, 0, syscall.KEY_QUERY_VALUE, &key); err != nil {
 		return "", fmt.Errorf("finding the Windows folder: %s", err.Error())
 	}
 
-	defer func() { _ = syscall.RegCloseKey(key) }()
+	defer func() { _ = key.Close() }()
 
-	name, err := syscall.UTF16PtrFromString("SystemRoot")
+	dir, valueType, err := key.GetStringValue("SystemRoot")
 	if err != nil {
-		return "", err
-	}
-
-	var valueType uint32
-
-	size := windowsDirectoryBytes
-	buf := make([]byte, size)
-
-	if err = syscall.RegQueryValueEx(key, name, nil, &valueType, &buf[0], &size); err != nil {
 		return "", fmt.Errorf("finding the Windows folder: %s", err.Error())
 	}
 
-	if valueType != syscall.REG_SZ || size%2 != 0 {
+	if valueType != registry.SZ {
 		return "", fmt.Errorf("finding the Windows folder: unexpected registry value")
 	}
 
-	value := make([]uint16, size/2)
-	for i := range value {
-		value[i] = uint16(buf[2*i]) | uint16(buf[2*i+1])<<8
-	}
-
-	dir := syscall.UTF16ToString(value)
 	if !filepath.IsAbs(dir) {
 		return "", fmt.Errorf("finding the Windows folder: %q is not an absolute path", dir)
 	}
@@ -414,16 +367,18 @@ func holdFolders(paths ...string) ([]heldFolder, error) {
 			return nil, err
 		}
 
-		name, err := syscall.UTF16PtrFromString(path)
+		name, err := windows.UTF16PtrFromString(path)
 		if err != nil {
 			releaseFolders(held)
 
 			return nil, err
 		}
 
-		handle, err := syscall.CreateFile(name, fileListDirectory|fileReadAttributes,
-			syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE, nil, syscall.OPEN_EXISTING,
-			syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+		// FILE_LIST_DIRECTORY makes the handle count for sharing checks; a handle
+		// with only FILE_READ_ATTRIBUTES would not block a rename.
+		handle, err := windows.CreateFile(name, windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+			windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		if err != nil {
 			releaseFolders(held)
 
@@ -443,16 +398,16 @@ func holdFolders(paths ...string) ([]heldFolder, error) {
 }
 
 func checkPlainFolder(folder heldFolder) error {
-	var info syscall.ByHandleFileInformation
-	if err := syscall.GetFileInformationByHandle(folder.handle, &info); err != nil {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(folder.handle, &info); err != nil {
 		return fmt.Errorf("checking %s: %s", folder.path, err.Error())
 	}
 
-	if info.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		return fmt.Errorf("%s is a link or junction; the Codex settings are not written through it", folder.path)
 	}
 
-	if info.FileAttributes&syscall.FILE_ATTRIBUTE_DIRECTORY == 0 {
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
 		return fmt.Errorf("%s is not a folder", folder.path)
 	}
 
@@ -461,7 +416,7 @@ func checkPlainFolder(folder heldFolder) error {
 
 func releaseFolders(held []heldFolder) {
 	for _, folder := range held {
-		_ = syscall.CloseHandle(folder.handle)
+		_ = windows.CloseHandle(folder.handle)
 	}
 }
 

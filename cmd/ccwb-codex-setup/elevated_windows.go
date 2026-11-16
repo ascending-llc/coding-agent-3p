@@ -11,10 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -187,7 +187,7 @@ func createAdminOnlyDir(parent, prefix string) (string, error) {
 	}
 
 	attributes := windows.SecurityAttributes{SecurityDescriptor: sd}
-	attributes.Length = uint32(reflect.TypeFor[windows.SecurityAttributes]().Size())
+	attributes.Length = uint32(unsafe.Sizeof(attributes))
 
 	for range downloadDirAttempts {
 		suffix := make([]byte, 8)

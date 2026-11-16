@@ -19,7 +19,7 @@ Local checks on 2026-11-11 used `debcce8` with the setup-guide and signing-conta
 
 The supplemental login-only check was explicitly authorized. Temporary builds and configurations were removed; the original AWS config was unchanged. Normal AWS SSO caches remain.
 
-Pending evidence: the S1 SmartScreen screenshot for the [Windows user guide](windows-user-guide.md#6-use-codex-with-bedrock), the actual SignTool path from S10 for the admin guide, and the S9–S11 signature and timestamp results. Record the date, tested revision, OS/tool versions and completed case IDs when these checks run.
+Pending evidence: the [hand-install commands](codex-setup-guide.md#install-the-file-by-hand) mirror the program's `icacls` calls but haven't been run as written on Windows; the S1 SmartScreen screenshot for the [Windows user guide](windows-user-guide.md#6-use-codex-with-bedrock), the actual SignTool path from S10 for the admin guide, and the S9–S11 signature and timestamp results. Record the date, tested revision, OS/tool versions and completed case IDs when these checks run.
 
 ### AS-1975 — 2026-11-05
 

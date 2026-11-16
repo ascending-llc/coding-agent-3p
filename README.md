@@ -54,12 +54,12 @@ Without Go, copy the committed examples in [`examples/`](examples/) and replace 
 ```
 cmd/ccwb-policy/       command-line entry point
 cmd/ccwb-codex-setup/  Windows setup program for Codex, built by the admin
-policy/               config validation and rendering of Claude, Codex and AWS artifacts
-internal/plist/       XML property list encoder for the .mobileconfig
-config/               config.example.json and your ignored config.json; embed.go embeds it in ccwb-codex-setup
-examples/             artifacts rendered from config.example.json
-docs/                 admin guide, user guides, test plan
-signing/              jsign container for signing the setup program with a cloud key
+policy/                config validation and rendering of Claude, Codex and AWS artifacts
+internal/plist/        XML property list encoder for the .mobileconfig
+config/                config.example.json and your ignored config.json; embed.go embeds it in ccwb-codex-setup
+examples/              artifacts rendered from config.example.json
+docs/                  admin guide, user guides, test plan
+signing/               jsign container for signing the setup program with a cloud key
 ```
 
 ## Development

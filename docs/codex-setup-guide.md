@@ -18,8 +18,8 @@ Use this table when reviewing the source before building:
 | Side effect | Implementation |
 | --- | --- |
 | Merges `[sso-session ccwb]` and `[profile CCWB]` into the original user's `%USERPROFILE%\.aws\config`. Backs up an existing file as `.bak-*` before writing and asks before replacing existing CCWB sections. Other profiles are preserved. | [awsconfig.go](../cmd/ccwb-codex-setup/awsconfig.go) |
-| Checks for AWS CLI v2. If it is missing, downloads `https://awscli.amazonaws.com/AWSCLIV2.msi`, verifies its Amazon signature and installs it with `msiexec`. An installed AWS CLI v1 stops setup instead of being replaced. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go), [elevated_windows.go](../cmd/ccwb-codex-setup/elevated_windows.go) |
-| Writes `%ProgramData%\OpenAI\Codex\requirements.toml`, backing up an existing file as `.bak-*` and asking before replacing different contents. Secures the directory and file so ordinary users can read but not change the settings. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go), [elevated_windows.go](../cmd/ccwb-codex-setup/elevated_windows.go) |
+| Checks for AWS CLI v2. If it is missing, downloads `https://awscli.amazonaws.com/AWSCLIV2.msi` into a new folder under the Windows `Temp` folder that only SYSTEM and Administrators can change, verifies its Amazon signature and installs it with `msiexec`. An installed AWS CLI v1 stops setup instead of being replaced. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go), [elevated_windows.go](../cmd/ccwb-codex-setup/elevated_windows.go) |
+| Writes `%ProgramData%\OpenAI\Codex\requirements.toml`, backing up an existing file as `.bak-*` and asking before replacing different contents. Secures the directory and file so ordinary users can read but not change the settings. Refuses to write if `OpenAI` or `Codex` is a junction or link. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go), [elevated_windows.go](../cmd/ccwb-codex-setup/elevated_windows.go) |
 | Requests one administrator (UAC) prompt per run only if the AWS CLI needs installing or the Codex settings need writing or securing. The user's AWS config is written before elevation, even if a different administrator approves UAC. | [main.go](../cmd/ccwb-codex-setup/main.go), [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go) |
 | If the user agrees, runs `aws sso login --profile CCWB` and `aws sts get-caller-identity --profile CCWB` as the original user. Prints the role ARN and warns if the account differs from the built-in account. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go) |
 | Runs `codex app-server daemon restart` only if `codex` is on `PATH` and its CLI daemon is already running. The desktop app must be quit and reopened separately. | [steps_windows.go](../cmd/ccwb-codex-setup/steps_windows.go) |
@@ -265,6 +265,26 @@ You can deploy AWS CLI v2 and the generated `dist/windows/codex-requirements-CCW
 - `requirements.toml` is owned by Administrators, SYSTEM or TrustedInstaller. Its inheritance is enabled and its only rules are the three inherited grants above, with no additional explicit grants or denies.
 
 The [permission checks](../cmd/ccwb-codex-setup/elevate.go) compare well-known SIDs and rights rather than localized names. Ordinary users can read the requirements but cannot edit them. If the content matches but permissions do not, setup still requests UAC to secure them. IT should also keep the parent `OpenAI` directory under a trusted owner; the program warns if that owner can replace the `Codex` directory.
+
+#### Install the file by hand
+
+These are the commands the program runs. In a PowerShell opened with **Run as administrator**, from the folder holding `codex-requirements-CCWB.toml`:
+
+```powershell
+$dir = "$env:ProgramData\OpenAI\Codex"
+$file = "$dir\requirements.toml"
+New-Item -ItemType Directory -Force $dir | Out-Null
+icacls $dir /setowner '*S-1-5-32-544'
+icacls $dir /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX'
+icacls $dir /inheritance:r
+Copy-Item codex-requirements-CCWB.toml $file
+icacls $file /reset
+icacls $file /setowner '*S-1-5-32-544'
+icacls $dir
+icacls $file
+```
+
+`icacls $dir` must list only `NT AUTHORITY\SYSTEM:(OI)(CI)(F)`, `BUILTIN\Administrators:(OI)(CI)(F)` and `BUILTIN\Users:(OI)(CI)(RX)`, and `icacls $file` the same three marked `(I)`. `/grant:r` replaces only those three accounts' entries, so a folder that already existed can keep others; remove each with `icacls $dir /remove '<account>'`, or run the setup program, which removes them. Don't use these commands if `OpenAI` or `Codex` is a junction or link.
 
 ### Updates
 

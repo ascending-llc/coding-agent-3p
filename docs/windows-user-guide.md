@@ -74,14 +74,7 @@ When AWS credentials expire, Codex re-runs the SSO sign-in automatically (`auth_
 
 For a manual pilot, install AWS CLI v2 and [add the AWS profile](#1-add-the-aws-profile) first. Then:
 
-1. In a PowerShell opened with **Run as administrator**:
-
-   ```powershell
-   New-Item -ItemType Directory -Force "$env:ProgramData\OpenAI\Codex" | Out-Null
-   Copy-Item codex-requirements-CCWB.toml "$env:ProgramData\OpenAI\Codex\requirements.toml"
-   ```
-
-   Have IT secure the file and directory as described in the [managed-fleet instructions](codex-setup-guide.md#managed-fleets).
+1. In a PowerShell opened with **Run as administrator**, install `codex-requirements-CCWB.toml` and lock its folder with the [commands in the setup guide](codex-setup-guide.md#install-the-file-by-hand). Copying the file alone leaves it changeable by ordinary users.
 2. Back in a normal, newly opened terminal under the employee's account, run `aws sso login --profile CCWB` and `aws sts get-caller-identity --profile CCWB`.
 3. Finish with the tray restart and client checks described above. The [Codex tests](test-plan.md#codex) include the `Reply with exactly: bedrock-ok` smoke test for US-based testers.
 

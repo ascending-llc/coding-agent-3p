@@ -218,6 +218,37 @@ func TestFileACL(t *testing.T) {
 	}
 }
 
+func TestAdminOnlyACL(t *testing.T) {
+	adminOnly := string(readFixture(t, "windows/admin-only-acl.txt"))
+
+	for _, tt := range []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"recorded lock", adminOnly, true},
+		{"CRLF", strings.ReplaceAll(adminOnly, "\n", "\r\n"), true},
+		{"Users can read", string(readFixture(t, "windows/locked-acl.txt")), false},
+		{"Users can create files", adminOnly + "rule=" + usersSID + " Allow 6 inh=ContainerInherit, ObjectInherit inherited=False\n", false},
+		{"inheritance enabled", strings.Replace(adminOnly, "protected=True", "protected=False", 1), false},
+		{"user owner", strings.Replace(adminOnly, "owner="+administratorSID, "owner=S-1-5-21-1-2-3-1001", 1), false},
+		{"SYSTEM missing", strings.Replace(adminOnly, "rule="+systemSID, "rule="+administratorSID, 1), false},
+		{"deny rule", strings.Replace(adminOnly, "Allow", "Deny", 1), false},
+		{"inherited rules", strings.ReplaceAll(adminOnly, "inherited=False", "inherited=True"), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			acl, err := parseACL([]byte(tt.output))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := acl.adminOnly(); got != tt.want {
+				t.Errorf("adminOnly = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChildFailureMessage(t *testing.T) {
 	for _, tt := range []struct {
 		want string

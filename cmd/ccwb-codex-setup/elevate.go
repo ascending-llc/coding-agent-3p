@@ -222,26 +222,35 @@ func parseACLRule(value string) (aclRule, error) {
 }
 
 func (acl pathACL) directoryLocked() bool {
-	return acl.owner == administratorSID && acl.protected && acl.matchesGrants(false, "ContainerInherit, ObjectInherit")
+	return acl.owner == administratorSID && acl.protected && acl.matchesGrants(false, "ContainerInherit, ObjectInherit", lockedGrants())
+}
+
+// adminOnly reports whether a directory grants access only to SYSTEM and
+// Administrators, so no unelevated process can add, change or replace its files.
+func (acl pathACL) adminOnly() bool {
+	return acl.owner == administratorSID && acl.protected && acl.matchesGrants(false, "ContainerInherit, ObjectInherit",
+		map[string]int{systemSID: fullControlMask, administratorSID: fullControlMask})
 }
 
 // fileLocked requires the file to inherit only the locked directory's grants.
 // A separate explicit grant or an untrusted owner could allow changes.
 func (acl pathACL) fileLocked() bool {
-	return trustedOwner(acl.owner) && !acl.protected && acl.matchesGrants(true, "None")
+	return trustedOwner(acl.owner) && !acl.protected && acl.matchesGrants(true, "None", lockedGrants())
 }
 
 func trustedOwner(sid string) bool {
 	return sid == administratorSID || sid == systemSID || sid == trustedInstallerSID
 }
 
-func (acl pathACL) matchesGrants(inherited bool, inheritance string) bool {
-	if len(acl.rules) != 3 {
-		return false
-	}
+func lockedGrants() map[string]int {
+	return map[string]int{systemSID: fullControlMask, administratorSID: fullControlMask, usersSID: usersReadMask}
+}
 
-	wanted := map[string]int{
-		systemSID: fullControlMask, administratorSID: fullControlMask, usersSID: usersReadMask,
+// matchesGrants reports whether the rules are exactly one allow rule per SID in
+// wanted, with that SID's rights. It deletes matched entries from wanted.
+func (acl pathACL) matchesGrants(inherited bool, inheritance string, wanted map[string]int) bool {
+	if len(acl.rules) != len(wanted) {
+		return false
 	}
 
 	for _, rule := range acl.rules {

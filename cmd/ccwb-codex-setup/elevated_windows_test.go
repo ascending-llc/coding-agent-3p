@@ -176,6 +176,105 @@ func TestRequirementsRepairsExtraGrant(t *testing.T) {
 	assertRequirementsLocked(t, dir)
 }
 
+func TestRequirementsRejectsJunctions(t *testing.T) {
+	for _, linked := range []string{"OpenAI", "Codex"} {
+		t.Run(linked, func(t *testing.T) {
+			programData, target := t.TempDir(), t.TempDir()
+			t.Setenv("ProgramData", programData)
+
+			link := filepath.Join(programData, "OpenAI")
+			if linked == "Codex" {
+				if err := os.Mkdir(link, 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				link = filepath.Join(link, "Codex")
+			}
+
+			createJunction(t, link, target)
+
+			code, err := installRequirements(setupFixture(t))
+			if code != exitPermissions || err == nil || !strings.Contains(err.Error(), "link or junction") {
+				t.Fatalf("installRequirements = %d, %v; want %d and a junction error", code, err, exitPermissions)
+			}
+
+			entries, err := os.ReadDir(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(entries) != 0 {
+				t.Errorf("wrote through the junction: %v", entries)
+			}
+		})
+	}
+}
+
+func TestHoldFoldersBlocksRename(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "Codex")
+
+	held, err := holdFolders(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Rename(dir, filepath.Join(parent, "moved")); err == nil {
+		releaseFolders(held)
+		t.Fatal("renamed a held folder")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("x"), 0o600); err != nil {
+		t.Errorf("could not create a file in a held folder: %v", err)
+	}
+
+	releaseFolders(held)
+
+	if err := os.Rename(dir, filepath.Join(parent, "moved")); err != nil {
+		t.Errorf("released folder could not be renamed: %v", err)
+	}
+}
+
+func TestWindowsDirectory(t *testing.T) {
+	dir, err := windowsDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := os.Getenv("SystemRoot"); !strings.EqualFold(dir, want) {
+		t.Errorf("windowsDirectory = %q, want %q", dir, want)
+	}
+}
+
+func TestLockAdminOnly(t *testing.T) {
+	requireElevatedWindows(t)
+
+	dir := filepath.Join(t.TempDir(), "download")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lockAdminOnly(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	acl, err := readACL(dir)
+	if err != nil || !acl.adminOnly() {
+		t.Fatalf("download folder not admin-only: %+v, %v", acl, err)
+	}
+
+	planted := filepath.Join(t.TempDir(), "planted")
+	if err := os.Mkdir(planted, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, filepath.Join(planted, "AWSCLIV2.msi"), []byte("planted\n"))
+
+	if err := lockAdminOnly(planted); err == nil {
+		t.Error("accepted a download folder that already had a file")
+	}
+}
+
 func TestRequirementsPathRejectsInvalidBase(t *testing.T) {
 	for _, base := range []string{"", "relative"} {
 		t.Run(base, func(t *testing.T) {
@@ -236,6 +335,17 @@ func TestRequirementsWriteCleansUpFailedRename(t *testing.T) {
 	if len(leftovers) != 0 {
 		t.Errorf("temporary files remain after failure: %v", leftovers)
 	}
+}
+
+func createJunction(t *testing.T, link, target string) {
+	t.Helper()
+
+	if output, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J: %v: %s", err, output)
+	}
+
+	// Remove the junction itself before t.TempDir cleans up its target.
+	t.Cleanup(func() { _ = os.Remove(link) })
 }
 
 func requireElevatedWindows(t *testing.T) {

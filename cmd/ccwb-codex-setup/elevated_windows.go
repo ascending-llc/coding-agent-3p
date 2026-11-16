@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/ascending-llc/claude-3p-config/policy"
 )
@@ -34,7 +37,17 @@ const (
 
 	// windowsDirectoryBytes holds a MAX_PATH UTF-16 registry value.
 	windowsDirectoryBytes uint32 = 2 * syscall.MAX_PATH
+
+	// adminOnlySDDL is owned by Administrators and grants full control only to
+	// SYSTEM and Administrators, without inheriting from the parent folder.
+	adminOnlySDDL = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	sddlRevision1 = 1
+
+	// downloadDirAttempts bounds retries when a random name is already taken.
+	downloadDirAttempts = 10
 )
+
+var procConvertSDDL = syscall.NewLazyDLL("advapi32.dll").NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 
 func runElevated(args []string, cfg []byte) int {
 	if len(args) != 2 || args[0] != "-elevated" {
@@ -168,18 +181,73 @@ func awsCLIDownloadDir() (string, error) {
 		return "", err
 	}
 
-	dir, err := os.MkdirTemp(filepath.Join(windows, "Temp"), "ccwb-awscli-*")
+	return createAdminOnlyDir(filepath.Join(windows, "Temp"), "ccwb-awscli-")
+}
+
+// createAdminOnlyDir creates a new folder with a random name under parent that
+// is locked from the moment it exists. A folder created with the parent's
+// inherited permissions and locked afterwards can be opened in between: in
+// the Windows Temp folder, CREATOR OWNER gives the signed-in user full control
+// of a folder an elevated process creates.
+func createAdminOnlyDir(parent, prefix string) (string, error) {
+	sd, err := adminOnlySecurityDescriptor()
 	if err != nil {
-		return "", fmt.Errorf("creating the AWS CLI download folder: %s", err.Error())
+		return "", err
 	}
 
-	if lockErr := lockAdminOnly(dir); lockErr != nil {
-		_ = os.RemoveAll(dir)
+	defer func() { _, _ = syscall.LocalFree(syscall.Handle(sd)) }()
 
-		return "", lockErr
+	attributes := syscall.SecurityAttributes{SecurityDescriptor: sd}
+	attributes.Length = uint32(unsafe.Sizeof(attributes))
+
+	for range downloadDirAttempts {
+		suffix := make([]byte, 8)
+		if _, err = rand.Read(suffix); err != nil {
+			return "", fmt.Errorf("creating the AWS CLI download folder: %s", err.Error())
+		}
+
+		dir := filepath.Join(parent, prefix+hex.EncodeToString(suffix))
+
+		path, pathErr := syscall.UTF16PtrFromString(dir)
+		if pathErr != nil {
+			return "", pathErr
+		}
+
+		err = syscall.CreateDirectory(path, &attributes)
+		if errors.Is(err, syscall.ERROR_ALREADY_EXISTS) {
+			continue
+		}
+
+		if err != nil {
+			return "", fmt.Errorf("creating the AWS CLI download folder: %s", err.Error())
+		}
+
+		if checkErr := checkAdminOnly(dir); checkErr != nil {
+			_ = os.RemoveAll(dir)
+
+			return "", checkErr
+		}
+
+		return dir, nil
 	}
 
-	return dir, nil
+	return "", fmt.Errorf("creating the AWS CLI download folder: %s", err.Error())
+}
+
+func adminOnlySecurityDescriptor() (uintptr, error) {
+	sddl, err := syscall.UTF16PtrFromString(adminOnlySDDL)
+	if err != nil {
+		return 0, err
+	}
+
+	var sd uintptr
+
+	ok, _, callErr := procConvertSDDL.Call(uintptr(unsafe.Pointer(sddl)), sddlRevision1, uintptr(unsafe.Pointer(&sd)), 0)
+	if ok == 0 {
+		return 0, fmt.Errorf("building the download folder permissions: %s", callErr.Error())
+	}
+
+	return sd, nil
 }
 
 // windowsDirectory reads the Windows folder from HKLM, which only
@@ -228,25 +296,9 @@ func windowsDirectory() (string, error) {
 	return dir, nil
 }
 
-func lockAdminOnly(dir string) error {
-	if err := runICACLS(dir, "/setowner", "*"+administratorSID); err != nil {
-		return err
-	}
-
-	if err := runICACLS(dir, "/grant:r", "*"+systemSID+":(OI)(CI)F", "*"+administratorSID+":(OI)(CI)F"); err != nil {
-		return err
-	}
-
-	// A new folder can start with explicit grants, such as one for the
-	// creating account, which /inheritance:r leaves in place.
-	if err := removeOtherRules(dir, systemSID, administratorSID); err != nil {
-		return err
-	}
-
-	if err := runICACLS(dir, "/inheritance:r"); err != nil {
-		return err
-	}
-
+// checkAdminOnly confirms that Windows applied the requested permissions,
+// since the MSI's signature check relies on nobody else changing the folder.
+func checkAdminOnly(dir string) error {
 	acl, err := readACL(dir)
 	if err != nil {
 		return err
@@ -254,16 +306,6 @@ func lockAdminOnly(dir string) error {
 
 	if !acl.adminOnly() {
 		return fmt.Errorf("the download folder permissions do not match the required lock: %+v", acl)
-	}
-
-	// A file created before the lock keeps the permissions it was created with.
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-
-	if len(entries) != 0 {
-		return fmt.Errorf("the download folder %s changed before it was locked", dir)
 	}
 
 	return nil

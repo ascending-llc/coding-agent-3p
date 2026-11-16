@@ -246,38 +246,48 @@ func TestWindowsDirectory(t *testing.T) {
 	}
 }
 
-func TestLockAdminOnly(t *testing.T) {
+func TestCreateAdminOnlyDir(t *testing.T) {
 	requireElevatedWindows(t)
 
-	dir := filepath.Join(t.TempDir(), "download")
-	if err := os.Mkdir(dir, 0o700); err != nil {
+	parent := t.TempDir()
+
+	// The parent grants Users full control to subfolders, as CREATOR OWNER
+	// does for the signed-in user in the Windows Temp folder.
+	if err := runICACLS(parent, "/grant", "*"+usersSID+":(OI)(CI)F"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Some new folders start with explicit grants, such as one for the
-	// creating account on the GitHub Windows runner.
-	if err := runICACLS(dir, "/grant", "*"+usersSID+":(OI)(CI)F"); err != nil {
+	first, err := createAdminOnlyDir(parent, "ccwb-awscli-")
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := lockAdminOnly(dir); err != nil {
+	second, err := createAdminOnlyDir(parent, "ccwb-awscli-")
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	acl, err := readACL(dir)
-	if err != nil || !acl.adminOnly() {
-		t.Fatalf("download folder not admin-only: %+v, %v", acl, err)
+	for _, dir := range []string{first, second} {
+		if !strings.HasPrefix(filepath.Base(dir), "ccwb-awscli-") || filepath.Dir(dir) != parent {
+			t.Errorf("unexpected download folder %q", dir)
+		}
+
+		acl, err := readACL(dir)
+		if err != nil || !acl.adminOnly() {
+			t.Fatalf("download folder not admin-only: %+v, %v", acl, err)
+		}
 	}
 
-	planted := filepath.Join(t.TempDir(), "planted")
-	if err := os.Mkdir(planted, 0o700); err != nil {
-		t.Fatal(err)
+	if first == second {
+		t.Errorf("both download folders are %q", first)
 	}
+}
 
-	writeTestFile(t, filepath.Join(planted, "AWSCLIV2.msi"), []byte("planted\n"))
+func TestCheckAdminOnlyRejectsInheritedFolder(t *testing.T) {
+	requireElevatedWindows(t)
 
-	if err := lockAdminOnly(planted); err == nil {
-		t.Error("accepted a download folder that already had a file")
+	if err := checkAdminOnly(t.TempDir()); err == nil {
+		t.Error("accepted a download folder with inherited permissions")
 	}
 }
 

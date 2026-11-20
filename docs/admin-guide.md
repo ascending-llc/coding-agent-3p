@@ -139,6 +139,7 @@ To change models or settings later, update the config, regenerate and reinstall.
 | `awsAuthRefresh` | `aws sso login --profile CCWB`, run only after credentials have expired |
 | `modelOverrides` | Each `anthropic_model_id` mapped to its AIP |
 | `availableModels`, `enforceAvailableModels` | Only the configured tiers' aliases, including for the Default option. Without this, Claude Code's Bedrock default is Opus through a public inference profile, which bypasses your AIPs |
+| `parentSettingsBehavior` | `merge`: in Claude Desktop's **Code** tab, Claude Code also applies the settings Desktop passes to it, keeping only those that restrict Claude further. Without it, Claude Code drops them because this policy is present, and Desktop warns that "Your organization's policy isn't fully applied on this computer". Permission allow rules and sandbox allowlists that Desktop passes still apply |
 
 Because these are managed settings, they apply to **every** Claude Code session for that user on that machine, and users can't override them.
 

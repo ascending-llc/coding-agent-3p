@@ -21,6 +21,10 @@ The supplemental login-only check was explicitly authorized. Temporary builds an
 
 Pending evidence: the [hand-install commands](codex-setup-guide.md#install-the-file-by-hand) mirror the program's `icacls` calls but haven't been run as written on Windows; the S1 SmartScreen screenshot for the [Windows user guide](windows-user-guide.md#6-use-codex-with-bedrock), the actual SignTool path from S10 for the admin guide, and the S9–S11 signature and timestamp results. Record the date, tested revision, OS/tool versions and completed case IDs when these checks run.
 
+### `parentSettingsBehavior` — untested
+
+The Claude Code policy sets `parentSettingsBehavior` to `merge` so the Code tab of Claude Desktop 6.x stops warning that the organization's policy isn't fully applied. The warning was reported on macOS 27.2.1 (Apple silicon) with Claude Desktop 6.6395.1; the key has not been tested yet on macOS or Windows. Run D5, then T3 and T9 to confirm the CLI is unchanged.
+
 ### AS-1975 — 2026-11-05
 
 macOS 26.5.2. Separately authorized login-only checks used the current generator's output through temporary local or process configuration.
@@ -72,6 +76,7 @@ The existing T1 and T2 commands, D3 and C2, and the prompt in C9 invoke models. 
 | D2 | Open the model picker | Only the configured models' labels, with the `claude.default_tier` model selected |
 | D3 | Chat with each model | Replies arrive; Bedrock usage of the matching AIP goes up |
 | D4 | **Customize → Connectors**, connect each managed connector. On Windows, test on a machine with WSL2 or Docker Desktop installed | It's listed, OAuth sign-in completes, and its tools work in a chat. `main.log` has no `dropped` or `listen EACCES` lines for it |
+| D5 | Open the **Code** tab, start a session in a project folder and run `/status` | No "Your organization's policy isn't fully applied on this computer" banner. `/status` shows the managed source and no `Skipped sources` line; Claude can read and edit files in the chosen folder |
 
 ## Claude Code
 

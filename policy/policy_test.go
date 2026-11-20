@@ -544,6 +544,10 @@ func TestDefaultTierAndOptionalOpus(t *testing.T) {
 				t.Errorf("availableModels = %v, want %v", got, tt.wantAvailable)
 			}
 
+			if got := settings["parentSettingsBehavior"]; got != "merge" {
+				t.Errorf("parentSettingsBehavior = %v, want merge", got)
+			}
+
 			if got, _ := settings["modelOverrides"].(map[string]string); len(got) != len(tt.wantAvailable) {
 				t.Errorf("modelOverrides = %v, want one entry per configured tier", got)
 			}

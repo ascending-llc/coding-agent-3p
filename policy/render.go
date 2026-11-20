@@ -190,6 +190,9 @@ func oauthSettings() *desktopOAuth {
 // claudeCodeSettings returns Claude Code's managed settings. Claude Code
 // reaches Bedrock through ProfileName, and every allowed model alias resolves
 // to one of the configured AIPs. An unconfigured tier's alias isn't allowed.
+// parentSettingsBehavior "merge" keeps the restrictions Claude Desktop passes
+// to the Code tab, which Claude Code otherwise drops whenever this policy is
+// present.
 func claudeCodeSettings(aws AWS, claude Claude) map[string]any {
 	defaultModel, _ := claude.model(claude.defaultTier())
 	env := map[string]string{
@@ -219,6 +222,7 @@ func claudeCodeSettings(aws AWS, claude Claude) map[string]any {
 		"modelOverrides":         overrides,
 		"availableModels":        available,
 		"enforceAvailableModels": true,
+		"parentSettingsBehavior": "merge",
 	}
 }
 

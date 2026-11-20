@@ -81,6 +81,8 @@
 				<key>claude-sonnet-5</key>
 				<string>arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/sonnet0001</string>
 			</dict>
+			<key>parentSettingsBehavior</key>
+			<string>merge</string>
 		</dict>
 	</array>
 	<key>PayloadDescription</key>

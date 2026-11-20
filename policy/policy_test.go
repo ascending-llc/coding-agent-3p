@@ -430,6 +430,27 @@ func TestDesktopSettingsDefaults(t *testing.T) {
 	}
 }
 
+func TestClaudeCodeSettingsDefaults(t *testing.T) {
+	cfg, err := Load(validConfig, Options{Products: []Product{ProductClaude}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := claudeCodeSettings(cfg.AWS, *cfg.Claude)
+
+	if got := settings["awsAuthRefresh"]; got != "aws sso login --profile "+ProfileName {
+		t.Errorf("awsAuthRefresh = %v, want aws sso login --profile %s", got, ProfileName)
+	}
+
+	if got := settings["enforceAvailableModels"]; got != true {
+		t.Errorf("enforceAvailableModels = %v, want true", got)
+	}
+
+	if got := settings["parentSettingsBehavior"]; got != "merge" {
+		t.Errorf("parentSettingsBehavior = %v, want merge", got)
+	}
+}
+
 func TestMCPUsesJarvisOAuth(t *testing.T) {
 	cfg, err := Load(validConfig, Options{Products: []Product{ProductClaude, ProductCodex}})
 	if err != nil {

@@ -81,6 +81,8 @@
 				<key>claude-sonnet-5</key>
 				<string>REPLACE_WITH_SONNET_AIP_ARN</string>
 			</dict>
+			<key>parentSettingsBehavior</key>
+			<string>merge</string>
 		</dict>
 	</array>
 	<key>PayloadDescription</key>

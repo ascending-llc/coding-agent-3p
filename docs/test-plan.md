@@ -76,7 +76,7 @@ The existing T1 and T2 commands, D3 and C2, and the prompt in C9 invoke models. 
 | D2 | Open the model picker | Only the configured models' labels, with the `claude.default_tier` model selected |
 | D3 | Chat with each model | Replies arrive; Bedrock usage of the matching AIP goes up |
 | D4 | **Customize → Connectors**, connect each managed connector. On Windows, test on a machine with WSL2 or Docker Desktop installed | It's listed, OAuth sign-in completes, and its tools work in a chat. `main.log` has no `dropped` or `listen EACCES` lines for it |
-| D5 | Open the **Code** tab, start a session in a project folder and run `/status` | No "Your organization's policy isn't fully applied on this computer" banner. `/status` shows the managed source and no `Skipped sources` line; Claude can read and edit files in the chosen folder |
+| D5 | Open the **Code** tab, start a session in a project folder and run `/status` | No "Your organization's policy isn't fully applied on this computer" banner. `/status` `Setting sources` lists the managed source (`Enterprise managed settings (plist)` on macOS, the registry on Windows), plus `(parent process)` if Desktop passed restrictive settings; Claude can read and edit files in the chosen folder. Record the `Setting sources` and any `Skipped sources` line verbatim, since the docs don't say whether a dropped parent appears under `Skipped sources` |
 
 ## Claude Code
 

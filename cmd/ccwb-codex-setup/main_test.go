@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -284,7 +285,7 @@ func TestRunSharesFinishInput(t *testing.T) {
 					t.Errorf("finish did not receive the next buffered input line: %q, %v", in.Text(), in.Err())
 				}
 
-				if out != &stdout || errs != &stderr || s != setupFixture(t) {
+				if out != &stdout || errs != &stderr || !reflect.DeepEqual(s, setupFixture(t)) {
 					t.Error("finish did not receive the output streams and parsed settings")
 				}
 

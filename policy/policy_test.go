@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -713,7 +714,10 @@ func TestModelValidationOrder(t *testing.T) {
 }
 
 func TestParseAcceptsCodexModels(t *testing.T) {
-	for _, model := range []string{"global.openai.gpt-6-astra", "us.openai.gpt-6-luna", "global.openai.gpt-6.1-terra", "us.openai.gpt-6.1-sol"} {
+	for _, model := range []string{
+		"global.openai.gpt-6-astra", "us.openai.gpt-6-luna", "global.openai.gpt-6.1-terra", "us.openai.gpt-6.1-sol",
+		"global.openai.gpt-6.2-astra", "global.openai.gpt-6.2-sol",
+	} {
 		t.Run(model, func(t *testing.T) {
 			cfg, err := Load(validConfig, Options{Products: []Product{ProductClaude, ProductCodex}})
 			if err != nil {
@@ -721,6 +725,7 @@ func TestParseAcceptsCodexModels(t *testing.T) {
 			}
 
 			cfg.Codex.DefaultModel = model
+			cfg.Codex.Models = map[string]CodexModel{model: {Label: "Test"}}
 
 			mutated, err := json.Marshal(cfg)
 			if err != nil {
@@ -729,6 +734,82 @@ func TestParseAcceptsCodexModels(t *testing.T) {
 
 			if _, err := Parse(bytes.NewReader(mutated), Options{Products: []Product{ProductClaude, ProductCodex}}); err != nil {
 				t.Errorf("Parse: %s", err.Error())
+			}
+		})
+	}
+}
+
+func TestParseCodexModelsMap(t *testing.T) {
+	const (
+		sol   = "us.openai.gpt-6.2-sol"
+		astra = "us.openai.gpt-6.2-astra"
+	)
+
+	tests := []struct {
+		mutate  func(*Codex)
+		name    string
+		wantErr string
+		want    []string
+	}{
+		{name: "default first, rest sorted", want: []string{sol, astra}},
+		{
+			name:   "models omitted approves only the default",
+			mutate: func(c *Codex) { c.Models = nil },
+			want:   []string{sol},
+		},
+		{
+			name:   "default need not sort first",
+			mutate: func(c *Codex) { c.DefaultModel = astra },
+			want:   []string{astra, sol},
+		},
+		{
+			name:    "default missing from models",
+			mutate:  func(c *Codex) { c.DefaultModel = "global.openai.gpt-6.1-terra" },
+			wantErr: `codex.default_model: must be one of codex.models, got "global.openai.gpt-6.1-terra"`,
+		},
+		{
+			name:    "model key that is not an OpenAI inference profile",
+			mutate:  func(c *Codex) { c.Models["global.anthropic.claude-sonnet-5"] = CodexModel{} },
+			wantErr: "codex.models.global.anthropic.claude-sonnet-5: must be a global. or us. Bedrock Runtime inference profile ID of an OpenAI model",
+		},
+		{
+			name:    "model key without a geo prefix",
+			mutate:  func(c *Codex) { c.Models["openai.gpt-6.2-sol"] = CodexModel{} },
+			wantErr: "codex.models.openai.gpt-6.2-sol: must be a global. or us.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(validConfig, Options{Products: []Product{ProductClaude, ProductCodex}})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if tt.mutate != nil {
+				tt.mutate(cfg.Codex)
+			}
+
+			raw, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := Parse(bytes.NewReader(raw), Options{Products: []Product{ProductClaude, ProductCodex}})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Parse error = %v, want it to contain %q", err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if models := got.Codex.ApprovedModels(); !slices.Equal(models, tt.want) {
+				t.Errorf("ApprovedModels() = %v, want %v", models, tt.want)
 			}
 		})
 	}
@@ -936,7 +1017,7 @@ func TestParseCodexSetup(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if got.AWS != cfg.AWS || got.Codex != *cfg.Codex {
+			if got.AWS != cfg.AWS || !reflect.DeepEqual(got.Codex, *cfg.Codex) {
 				t.Errorf("parsed setup = %+v, want original AWS and Codex values", got)
 			}
 		})

@@ -37,7 +37,15 @@
     ]
   },
   "codex": {
-    "default_model": "global.openai.gpt-6.1-terra",
-    "reasoning_effort": "medium"
+    "default_model": "global.openai.gpt-6.2-sol",
+    "reasoning_effort": "medium",
+    "models": {
+      "global.openai.gpt-6.2-sol": {
+        "label": "GPT-6.2 Sol"
+      },
+      "global.openai.gpt-6.2-astra": {
+        "label": "GPT-6.2 Astra"
+      }
+    }
   }
 }

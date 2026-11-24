@@ -39,7 +39,15 @@
     ]
   },
   "codex": {
-    "default_model": "us.openai.gpt-6.1-sol",
-    "reasoning_effort": "hihg"
+    "default_model": "us.openai.gpt-6.2-sol",
+    "reasoning_effort": "hihg",
+    "models": {
+      "us.openai.gpt-6.2-sol": {
+        "label": "GPT-6.2 Sol"
+      },
+      "us.openai.gpt-6.2-astra": {
+        "label": "GPT-6.2 Astra"
+      }
+    }
   }
 }

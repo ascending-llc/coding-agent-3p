@@ -52,7 +52,8 @@ Existing deployment configs must be rewritten by hand using the new example.
 
 | Field | Value |
 | --- | --- |
-| `codex.default_model` | A Global (`global.openai.…`) or US Geo (`us.openai.…`) Bedrock Runtime inference profile ID, such as `global.openai.gpt-6.1-terra`. The generator checks only the form: check the model's AWS model card that the profile can be called from `aws.bedrock_region` (US Geo profiles also work from the Canadian Regions), and grant it in IAM |
+| `codex.models.<profile-id>` | Optional. One entry per approved model, keyed by a Global (`global.openai.…`) or US Geo (`us.openai.…`) Bedrock Runtime inference profile ID, such as `global.openai.gpt-6.2-sol` and `global.openai.gpt-6.2-astra`. Each entry takes an optional `label`. Keep this list identical to `approved_codex_inference_profile_arns` in bedrock-governance. Codex's `requirements.toml` has no model allowlist, so the list documents and validates the approved set but IAM/SCP enforces it. When omitted, `codex.default_model` is the only approved model |
+| `codex.default_model` | The profile ID Codex starts new threads with. When `codex.models` is set it must be one of its keys. The generator checks only the form: check the model's AWS model card that the profile can be called from `aws.bedrock_region` (US Geo profiles also work from the Canadian Regions), and grant it in IAM |
 | `codex.reasoning_effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` or `persistent`. Each model supports only some of these; check the model card |
 
 To find the AIPs and the models behind them:

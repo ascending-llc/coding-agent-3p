@@ -608,6 +608,33 @@ func assertContains(t *testing.T, text string, parts []string) {
 	}
 }
 
+func TestApprovedModels(t *testing.T) {
+	const sol, astra = "us.openai.gpt-6.2-sol", "us.openai.gpt-6.2-astra"
+
+	tests := []struct {
+		name  string
+		want  string
+		codex policy.Codex
+	}{
+		{name: "models omitted shows only the default", codex: policy.Codex{DefaultModel: sol}, want: sol},
+		{
+			name: "labels where set, default first",
+			codex: policy.Codex{DefaultModel: astra, Models: map[string]policy.CodexModel{
+				sol: {}, astra: {Label: "GPT-6.2 Astra"},
+			}},
+			want: astra + " (GPT-6.2 Astra), " + sol,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := approvedModels(tt.codex); got != tt.want {
+				t.Errorf("approvedModels() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func assertSummary(t *testing.T, text string) {
 	t.Helper()
 
@@ -617,6 +644,7 @@ func assertSummary(t *testing.T, text string) {
 		setup.AWS.AccountID, setup.AWS.BedrockRegion, setup.AWS.SSOStartURL,
 		setup.AWS.SSORegion, setup.AWS.SSORoleName, setup.Codex.DefaultModel,
 		setup.Codex.ReasoningEffort, "Proceed? [Y/n]",
+		"Codex approved models: us.openai.gpt-6.2-sol (GPT-6.2 Sol), us.openai.gpt-6.2-astra (GPT-6.2 Astra)\n",
 	})
 
 	if !strings.HasPrefix(text, "ccwb-codex-setup ") {

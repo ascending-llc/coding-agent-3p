@@ -64,10 +64,11 @@ SSO start URL: %s
 SSO region: %s
 SSO role name: %s
 Codex default model: %s
+Codex approved models: %s
 Codex reasoning effort: %s
 
 `, s.AWS.AccountID, s.AWS.BedrockRegion, s.AWS.SSOStartURL, s.AWS.SSORegion,
-		s.AWS.SSORoleName, s.Codex.DefaultModel, s.Codex.ReasoningEffort)
+		s.AWS.SSORoleName, s.Codex.DefaultModel, approvedModels(s.Codex), s.Codex.ReasoningEffort)
 
 	in := bufio.NewScanner(stdin)
 
@@ -98,6 +99,19 @@ Codex reasoning effort: %s
 	}
 
 	return finish(in, stdout, stderr, s)
+}
+
+// approvedModels lists the approved Codex model IDs for the summary, the
+// default first, each followed by its label when it has one.
+func approvedModels(c policy.Codex) string {
+	models := c.ApprovedModels()
+	for i, id := range models {
+		if label := c.Models[id].Label; label != "" {
+			models[i] = id + " (" + label + ")"
+		}
+	}
+
+	return strings.Join(models, ", ")
 }
 
 func revision(info *debug.BuildInfo) string {

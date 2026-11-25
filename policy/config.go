@@ -68,16 +68,29 @@ type (
 
 	// Codex holds the managed defaults for Codex on Amazon Bedrock.
 	Codex struct {
-		// DefaultModel is one approved Bedrock Runtime inference profile ID.
+		// Models maps each approved Bedrock Runtime inference profile ID to its
+		// details. It is optional: when omitted, DefaultModel is the only
+		// approved model. It documents what IAM must grant (see
+		// approved_codex_inference_profile_arns in bedrock-governance); Codex's
+		// requirements.toml has no model allowlist, so it isn't enforced there.
+		Models map[string]CodexModel `json:"models,omitempty"`
+		// DefaultModel is one approved Bedrock Runtime inference profile ID. When
+		// Models is set, it must be one of its keys.
 		DefaultModel string `json:"default_model"`
 		// ReasoningEffort is the default effort shared by the approved models.
 		ReasoningEffort string `json:"reasoning_effort"`
 	}
 
+	// CodexModel describes one approved Codex model.
+	CodexModel struct {
+		// Label is a human-readable name, such as "GPT-6.2 Sol".
+		Label string `json:"label,omitempty"`
+	}
+
 	// CodexSetup is what ccwb-codex-setup writes on one machine.
 	CodexSetup struct {
-		AWS   AWS
 		Codex Codex
+		AWS   AWS
 	}
 
 	// MCPServer is a Jarvis Registry MCP endpoint reached over streamable HTTP.
@@ -307,9 +320,32 @@ func (v *validator) validate(cfg Config, products []Product) {
 	}
 }
 
+// ApprovedModels returns every approved Codex model ID, with the default first
+// and the rest sorted. A config without a models map approves only the default.
+func (c Codex) ApprovedModels() []string {
+	models := []string{c.DefaultModel}
+
+	for _, id := range slices.Sorted(maps.Keys(c.Models)) {
+		if id != c.DefaultModel {
+			models = append(models, id)
+		}
+	}
+
+	return models
+}
+
 func (v *validator) validateCodex(c Codex) {
 	v.field("codex.default_model", c.DefaultModel, pattern(codexModelPattern,
-		"a global. or us. Bedrock Runtime inference profile ID of an OpenAI model, such as global.openai.gpt-6.1-terra"))
+		"a global. or us. Bedrock Runtime inference profile ID of an OpenAI model, such as global.openai.gpt-6.2-sol"))
+
+	for _, id := range slices.Sorted(maps.Keys(c.Models)) {
+		v.field("codex.models."+id, id, pattern(codexModelPattern,
+			"a global. or us. Bedrock Runtime inference profile ID of an OpenAI model, such as global.openai.gpt-6.2-sol"))
+	}
+
+	if _, ok := c.Models[c.DefaultModel]; len(c.Models) > 0 && !ok && !strings.Contains(c.DefaultModel, placeholderMarker) {
+		v.fail("codex.default_model", fmt.Sprintf("must be one of codex.models, got %q", c.DefaultModel))
+	}
 
 	if !slices.Contains(codexReasoningEfforts, c.ReasoningEffort) {
 		v.fail("codex.reasoning_effort", fmt.Sprintf("must be one of %s, got %q",
